@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Cobrança - Motoristas</title>
+    
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+
+    <style>
+        /* --- ESTILOS GERAIS --- */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6; color: #333; line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 20px auto; padding: 0 20px; }
+
+        /* Header */
+        .header {
+            background-color: #fff; padding: 20px 30px; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); margin-bottom: 20px;
+            border-left: 5px solid #4a148c;
+        }
+        .header h1 { color: #4a148c; margin-bottom: 5px; font-size: 1.6rem; }
+        .header p { color: #666; font-size: 1rem; }
+
+        /* Cards */
+        .upload-card, .filters-card, .table-card {
+            background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); margin-bottom: 20px;
+        }
+        h2 { color: #4a148c; margin-bottom: 20px; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; font-size: 1.3rem; }
+
+        /* Upload */
+        .upload-area {
+            border: 3px dashed #ddd; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: background-color 0.3s, border-color 0.3s;
+        }
+        .upload-area:hover { background-color: #fafafa; border-color: #9c27b0; }
+        .upload-btn {
+            background-color: #9c27b0; color: #fff; border: none; padding: 12px 25px; font-size: 1rem; font-weight: bold; border-radius: 5px; cursor: pointer;
+        }
+        .upload-status { margin-top: 15px; font-weight: bold; }
+
+        /* Filtros */
+        .filter-group { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 20px; }
+        .filter-item { flex: 1 1 320px; display: flex; flex-direction: column; }
+        .filter-item select { width: 100%; height: 44px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background-color: #fff; }
+        
+        /* Botões Filtro */
+        .button-group { display: flex; gap: 10px; width: 100%; height: 44px; }
+        .filter-btn {
+            flex: 1; border: none; border-radius: 22px; color: #fff; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; text-transform: uppercase;
+        }
+        .apply-btn { background: linear-gradient(135deg, #00897b, #00695c); }
+        .clear-btn { background: linear-gradient(135deg, #78909c, #546e7a); }
+
+        /* Choices.js Overrides */
+        .choices__inner { background-color: #fff; border-radius: 5px; min-height: 44px; }
+        
+        /* Métricas */
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .metric-card { background: linear-gradient(135deg, #7b1fa2, #4a148c); color: #fff; padding: 25px; border-radius: 8px; }
+        .metric-card.problematic { background: linear-gradient(135deg, #d81b60, #ad1457); }
+        .metric-card.open { background: linear-gradient(135deg, #ff8f00, #c56000); }
+        .metric-value { font-size: 2.5rem; font-weight: bold; }
+
+        /* Tabelas */
+        .table-container { width: 100%; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        table th, table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; white-space: nowrap; }
+        table th { background-color: #6a1b9a; color: #fff; }
+        
+        /* Loading & Toast */
+        .loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); display: none; justify-content: center; align-items: center; z-index: 1000; flex-direction: column; }
+        .spinner { border: 8px solid #f3f3f3; border-top: 8px solid #9c27b0; border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1001; left: 50%; transform: translateX(-50%); bottom: 30px; opacity: 0; transition: opacity 0.5s; }
+        .toast.show { visibility: visible; opacity: 1; }
+
+        /* Botão Gerar Texto */
+        .generate-btn {
+            background-color: #0288d1;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: background 0.3s ease;
+        }
+        .generate-btn:hover { background-color: #01579b; }
+
+        /* --- MODAL (POPUP) --- */
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 2000; 
+            left: 0;
+            top: 0;
+            width: 100%; 
+            height: 100%; 
+            overflow: auto; 
+            background-color: rgba(0,0,0,0.5); 
+            backdrop-filter: blur(2px);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto; 
+            padding: 20px;
+            border: 1px solid #888;
+            width: 90%; 
+            max-width: 600px;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .modal-header h3 { color: #333; margin: 0; }
+        .close-modal { color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close-modal:hover { color: #000; }
+        
+        .modal-body textarea {
+            width: 100%;
+            height: 300px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            resize: vertical;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn-copy { background-color: #25D366; color: white; } /* Cor WhatsApp */
+        .btn-copy:hover { background-color: #128C7E; }
+        .btn-close { background-color: #e0e0e0; color: #333; }
+        .btn-close:hover { background-color: #ccc; }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-truck"></i> Dashboard de Cobrança</h1>
+            <p>Monitoramento e Geração de Texto de Cobrança</p>
+        </header>
+
+        <main class="main-content">
+            <section class="upload-section">
+                <div class="upload-card">
+                    <h2><i class="fas fa-upload"></i> Upload da Planilha</h2>
+                    <div class="upload-area" id="uploadArea">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Arraste e solte sua planilha Excel/CSV aqui</p>
+                        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
+                        <button class="upload-btn" onclick="document.getElementById('fileInput').click()">Selecionar Arquivo</button>
+                    </div>
+                    <div class="upload-status" id="uploadStatus"></div>
+                </div>
+            </section>
+
+            <section class="filters-section" id="filtersSection" style="display: none;">
+                <div class="filters-card">
+                    <h2><i class="fas fa-filter"></i> Filtros</h2>
+                    <div class="filter-group">
+                        <div class="filter-item">
+                            <label>Entregador(es):</label>
+                            <select id="entregadorFilter" multiple></select>
+                        </div>
+                        <div class="filter-item">
+                            <label>Cidade(s):</label>
+                            <select id="cidadeFilter" multiple></select>
+                        </div>
+                        <div class="filter-item">
+                            <label>Status:</label>
+                            <select id="statusFilter">
+                                <option value="">Todos</option>
+                                <option value="entregues">Entregues</option>
+                                <option value="com_motivo">Problemáticos</option>
+                                <option value="aberto">Em Aberto</option>
+                            </select>
+                        </div>
+                        <div class="filter-item" style="justify-content:flex-end;">
+                             <label><input type="checkbox" id="ignoreLowPackagesToggle"> Ignorar < 20 pacotes</label>
+                        </div>
+                        <div class="filter-item button-group-item">
+                            <div class="button-group">
+                                <button class="filter-btn apply-btn" onclick="aplicarFiltro()"><i class="fas fa-search"></i> Aplicar</button>
+                                <button class="filter-btn clear-btn" onclick="limparFiltros()"><i class="fas fa-times"></i> Limpar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <section class="metrics-section" id="metricsSection" style="display: none;">
+                <div class="metrics-grid">
+                    <div class="metric-card"><h3><i class="fas fa-box"></i> Total</h3><div class="metric-value" id="totalPacotes">0</div></div>
+                    <div class="metric-card"><h3><i class="fas fa-check-circle"></i> Entregues</h3><div class="metric-value" id="pacotesEntregues">0</div></div>
+                    <div class="metric-card problematic"><h3><i class="fas fa-exclamation-triangle"></i> Problemáticos</h3><div class="metric-value" id="pacotesProblematicos">0</div></div>
+                    <div class="metric-card open"><h3><i class="fas fa-question-circle"></i> Em Aberto</h3><div class="metric-value" id="pacotesEmAberto">0</div></div>
+                    <div class="metric-card"><h3><i class="fas fa-percentage"></i> SLA</h3><div class="metric-value" id="taxaEntrega">0%</div></div>
+                </div>
+            </section>
+
+            <section class="tables-section" id="tablesSection" style="display: none;">
+                <div class="table-card">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                        <h2><i class="fas fa-table"></i> Métricas por Entregador</h2>
+                        <button id="copyTableButton" class="copy-btn"><i class="fas fa-copy"></i> Copiar Tabela</button>
+                    </div>
+                    <div class="table-container">
+                        <table id="metricsTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort-key="Entregador">Entregador</th>
+                                    <th data-sort-key="Total">Total</th>
+                                    <th data-sort-key="Entregues">Entregues</th>
+                                    <th data-sort-key="Problematicos">Prob.</th>
+                                    <th data-sort-key="EmAberto">Aberto</th>
+                                    <th data-sort-key="Taxa">SLA</th>
+                                    <th data-html2canvas-ignore="true">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="metricsTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                 <div class="table-card">
+                    <div class="table-header-controls">
+                        <h2><i class="fas fa-map-marker-alt"></i> Métricas por Cidade</h2>
+                    </div>
+                    <div class="table-container">
+                        <table id="cityMetricsTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort-key="Cidade">Cidade</th>
+                                    <th data-sort-key="Total">Total</th>
+                                    <th data-sort-key="Entregues">Entregues</th>
+                                    <th data-sort-key="Problematicos">Prob.</th>
+                                    <th data-sort-key="EmAberto">Aberto</th>
+                                    <th data-sort-key="Taxa">SLA</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cityMetricsTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                 <div class="table-card">
+                    <h2><i class="fas fa-list"></i> Detalhes Problemáticos</h2>
+                    <div class="table-container">
+                        <table id="detailsTable">
+                            <thead><tr><th>JMS</th><th>Entregador</th><th>Destinatário</th><th>Motivo</th></tr></thead>
+                            <tbody id="detailsTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="textModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Texto de Cobrança</h3>
+                <span class="close-modal" onclick="fecharModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom:10px; font-size:0.9rem; color:#666;">Copie o texto abaixo e envie ao motorista:</p>
+                <textarea id="modalTextArea" readonly></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-close" onclick="fecharModal()">Fechar</button>
+                <button class="modal-btn btn-copy" onclick="copiarTextoModal()"><i class="fas fa-copy"></i> Copiar Texto</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading" id="loading"><div class="spinner"></div><p>Processando...</p></div>
+    <div id="copyToast" class="toast"></div>
+
+    <script>
+        // --- CONFIGURAÇÃO ---
+        const PADRAO_1 = { CHAVE_DETECCAO: "3 Segmentos", motorista: "Responsável pela entrega", status: "Marca de assinatura", cidade: "Cidade Destino", motivo: "Motivos dos pacotes problemáticos", pedido_jms: "Número de pedido JMS", destinatario: "Destinatário" };
+        const PADRAO_2 = { CHAVE_DETECCAO: "Centro financeiro de entrega", motorista: "Responsável pela entrega", status: "Marca de assinatura", cidade: "Cidade Destino", motivo: "Motivos dos pacotes problemáticos", pedido_jms: "Número de pedido JMS", destinatario: "Destinatário" };
+        const TODOS_PADROES = [PADRAO_1, PADRAO_2];
+        const STATUS_ENTREGUE = "Recebimento com assinatura normal";
+        const STATUS_PROBLEMA = "Não entregue";
+        
+        let fullData = [];
+        let columnMapping = {}; 
+        let sortConfig = { column: 'EmAberto', direction: 'desc' };
+        let citySortConfig = { column: 'EmAberto', direction: 'desc' };
+        let choicesMotorista = null;
+        let choicesCidade = null;
+
+        // Elementos DOM
+        const fileInput = document.getElementById('fileInput');
+        const uploadArea = document.getElementById('uploadArea');
+        const copyTableBtn = document.getElementById('copyTableButton');
+
+        // Listeners Upload
+        fileInput.addEventListener('change', handleFileSelect);
+        uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+        uploadArea.addEventListener('drop', e => {
+            e.preventDefault(); uploadArea.classList.remove('dragover');
+            if(e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; handleFileSelect({target: fileInput}); }
+        });
+        if(copyTableBtn) copyTableBtn.addEventListener('click', copyTableToClipboard_AsImage);
+
+        // MODAL FUNCTIONS
+        const modal = document.getElementById("textModal");
+        const modalTextArea = document.getElementById("modalTextArea");
+        const modalTitle = document.getElementById("modalTitle");
+
+        function fecharModal() {
+            modal.style.display = "none";
+        }
+        
+        // Fecha se clicar fora
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                fecharModal();
+            }
+        }
+
+        function copiarTextoModal() {
+            modalTextArea.select();
+            modalTextArea.setSelectionRange(0, 99999); // Mobile
+            navigator.clipboard.writeText(modalTextArea.value).then(() => {
+                showToast("Texto copiado!");
+            });
+        }
+
+        // --- LÓGICA PRINCIPAL ---
+        
+        // Gera o texto detalhado para o motorista
+        function gerarTextoCobranca(motoristaNome) {
+            const pendencias = fullData.filter(item => {
+                const itemMotorista = item[columnMapping.motorista];
+                const itemStatus = item[columnMapping.status];
+                return itemMotorista === motoristaNome && itemStatus !== STATUS_ENTREGUE;
+            });
+
+            if (pendencias.length === 0) {
+                showToast("Este motorista não possui pendências!");
+                return;
+            }
+
+            let mensagem = `*COBRANÇA DE PENDÊNCIAS*\n`;
+            mensagem += `👤 Motorista: *${motoristaNome}*\n`;
+            mensagem += `📦 Total Pendente: ${pendencias.length} pacotes\n\n`;
+            mensagem += `Segue relação de pacotes não finalizados:\n`;
+            mensagem += `-----------------------------------\n`;
+
+            pendencias.forEach((item, index) => {
+                const codigo = item[columnMapping.pedido_jms] || "S/ Cód";
+                const dest = item[columnMapping.destinatario] || "Destinatário N/A";
+                const motivoRaw = item[columnMapping.motivo];
+                const status = (motivoRaw && String(motivoRaw).trim() !== '') ? `Prob: ${motivoRaw}` : "Em Aberto";
+
+                mensagem += `${index + 1}. *${codigo}* - ${dest}\n`;
+                mensagem += `   Status: _${status}_\n\n`;
+            });
+
+            mensagem += `-----------------------------------\n`;
+            mensagem += `Favor regularizar a situação.`;
+
+            modalTitle.textContent = `Cobrança: ${motoristaNome}`;
+            modalTextArea.value = mensagem;
+            modal.style.display = "block";
+        }
+
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                document.getElementById('loading').style.display = 'flex';
+                document.getElementById('uploadStatus').textContent = `Lendo: ${file.name}`;
+                
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    try {
+                        const workbook = XLSX.read(e.target.result, { type: 'binary' });
+                        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                        if (!jsonData.length) throw new Error("Planilha vazia.");
+                        
+                        columnMapping = detectColumnPattern(Object.keys(jsonData[0]));
+                        if (!columnMapping) throw new Error("Colunas não reconhecidas.");
+                        
+                        processData(jsonData);
+                        document.getElementById('uploadStatus').textContent = "Arquivo Processado!";
+                        document.getElementById('uploadStatus').style.color = "green";
+                        addTableSortListeners();
+                        addCityTableSortListeners(); // Adicionar listeners cidade
+
+                    } catch (error) {
+                        console.error(error);
+                        document.getElementById('uploadStatus').textContent = "Erro: " + error.message;
+                        document.getElementById('loading').style.display = 'none';
+                    }
+                };
+                reader.readAsBinaryString(file);
+            }
+        }
+
+        function detectColumnPattern(headers) {
+            for (const p of TODOS_PADROES) {
+                if (headers.includes(p.CHAVE_DETECCAO)) return p;
+            }
+            return null;
+        }
+
+        function processData(data) {
+            fullData = data;
+            
+            // Init Filters
+            if(!choicesMotorista) choicesMotorista = new Choices('#entregadorFilter', { removeItemButton: true, searchEnabled: true });
+            if(!choicesCidade) choicesCidade = new Choices('#cidadeFilter', { removeItemButton: true, searchEnabled: true });
+            
+            const motoristas = [...new Set(data.map(i => i[columnMapping.motorista]).filter(Boolean))].sort();
+            const cidades = [...new Set(data.map(i => i[columnMapping.cidade]).filter(Boolean))].sort();
+            
+            choicesMotorista.clearStore(); choicesMotorista.setChoices(motoristas.map(m=>({value:m, label:m})), 'value', 'label', false);
+            choicesCidade.clearStore(); choicesCidade.setChoices(cidades.map(c=>({value:c, label:c})), 'value', 'label', false);
+
+            aplicarFiltro();
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('filtersSection').style.display = 'block';
+            document.getElementById('metricsSection').style.display = 'block';
+            document.getElementById('tablesSection').style.display = 'block';
+        }
+
+        function aplicarFiltro() {
+            const selMot = choicesMotorista.getValue(true);
+            const selCid = choicesCidade.getValue(true);
+            const stFiltro = document.getElementById('statusFilter').value;
+            
+            let filtered = fullData;
+            if (selMot.length) filtered = filtered.filter(i => selMot.includes(i[columnMapping.motorista]));
+            if (selCid.length) filtered = filtered.filter(i => selCid.includes(i[columnMapping.cidade]));
+            
+            if (stFiltro === 'entregues') filtered = filtered.filter(i => i[columnMapping.status] === STATUS_ENTREGUE);
+            else if (stFiltro === 'com_motivo') filtered = filtered.filter(i => i[columnMapping.status] === STATUS_PROBLEMA && i[columnMapping.motivo]);
+            else if (stFiltro === 'aberto') filtered = filtered.filter(i => i[columnMapping.status] === STATUS_PROBLEMA && !i[columnMapping.motivo]);
+            
+            updateMetrics(filtered);
+            updateMetricsTable(filtered);
+            updateCityTable(filtered);
+            updateDetailsTable(filtered);
+        }
+
+        function updateMetrics(data) {
+            let ent = 0, prob = 0, ab = 0, tot = data.length;
+            data.forEach(i => {
+                if (i[columnMapping.status] === STATUS_ENTREGUE) ent++;
+                else if (i[columnMapping.motivo]) prob++;
+                else ab++;
+            });
+            document.getElementById('totalPacotes').textContent = tot;
+            document.getElementById('pacotesEntregues').textContent = ent;
+            document.getElementById('pacotesProblematicos').textContent = prob;
+            document.getElementById('pacotesEmAberto').textContent = ab;
+            document.getElementById('taxaEntrega').textContent = (tot ? (ent/tot)*100 : 0).toFixed(2) + "%";
+        }
+
+        function updateMetricsTable(data) {
+            const tbody = document.getElementById('metricsTableBody');
+            tbody.innerHTML = '';
+            const ignoreLow = document.getElementById('ignoreLowPackagesToggle').checked;
+
+            const grouped = {};
+            data.forEach(i => {
+                const m = i[columnMapping.motorista];
+                if(!m) return;
+                if(!grouped[m]) grouped[m] = { total:0, ent:0, prob:0, ab:0 };
+                grouped[m].total++;
+                if(i[columnMapping.status] === STATUS_ENTREGUE) grouped[m].ent++;
+                else if(i[columnMapping.motivo]) grouped[m].prob++;
+                else grouped[m].ab++;
+            });
+
+            let arr = Object.keys(grouped).map(k => ({
+                Entregador: k, ...grouped[k], Taxa: grouped[k].total ? (grouped[k].ent/grouped[k].total)*100 : 0
+            }));
+
+            if(ignoreLow) arr = arr.filter(x => x.total >= 20);
+
+            const { column, direction } = sortConfig;
+            const mult = direction === 'asc' ? 1 : -1;
+            arr.sort((a,b) => (typeof a[column]==='string' ? a[column].localeCompare(b[column]) : a[column]-b[column]) * mult);
+            
+            updateSortIndicators();
+
+            arr.forEach(row => {
+                const tr = document.createElement('tr');
+                let nomeHtml = row.Entregador;
+                if(row.Taxa < 60) nomeHtml += ` <span class="alert-emoji" title="Baixa Performance">⚠️</span>`;
+
+                let btnHtml = "";
+                if ((row.ab + row.prob) > 0) {
+                    btnHtml = `<button class="generate-btn" onclick="gerarTextoCobranca('${row.Entregador}')">
+                                <i class="fas fa-file-alt"></i> Gerar Texto
+                               </button>`;
+                } else {
+                    btnHtml = `<span style="color:green;font-size:0.8rem;">OK <i class="fas fa-check"></i></span>`;
+                }
+
+                // MUDANÇA: A última coluna tem o atributo data-html2canvas-ignore para não sair na foto
+                tr.innerHTML = `
+                    <td>${nomeHtml}</td><td>${row.total}</td><td>${row.ent}</td><td>${row.prob}</td><td>${row.ab}</td>
+                    <td>${row.Taxa.toFixed(2)}%</td>
+                    <td data-html2canvas-ignore="true">${btnHtml}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        
+        function updateCityTable(data) {
+            const tbody = document.getElementById('cityMetricsTableBody');
+            tbody.innerHTML = '';
+
+            const grouped = {};
+            data.forEach(i => {
+                const c = i[columnMapping.cidade];
+                if(!c) return;
+                if(!grouped[c]) grouped[c] = { total:0, ent:0, prob:0, ab:0 };
+                grouped[c].total++;
+                if(i[columnMapping.status] === STATUS_ENTREGUE) grouped[c].ent++;
+                else if(i[columnMapping.motivo]) grouped[c].prob++;
+                else grouped[c].ab++;
+            });
+
+            let arr = Object.keys(grouped).map(k => ({
+                Cidade: k, ...grouped[k], Taxa: grouped[k].total ? (grouped[k].ent/grouped[k].total)*100 : 0
+            }));
+
+            const { column, direction } = citySortConfig;
+            const mult = direction === 'asc' ? 1 : -1;
+            arr.sort((a,b) => (typeof a[column]==='string' ? a[column].localeCompare(b[column]) : a[column]-b[column]) * mult);
+            
+            updateCitySortIndicators();
+
+            arr.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.Cidade}</td><td>${row.total}</td><td>${row.ent}</td><td>${row.prob}</td><td>${row.ab}</td>
+                    <td>${row.Taxa.toFixed(2)}%</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateDetailsTable(data) {
+            const tbody = document.getElementById('detailsTableBody');
+            tbody.innerHTML = '';
+            data.filter(i => i[columnMapping.status] === STATUS_PROBLEMA).forEach(i => {
+                const tr = document.createElement('tr');
+                const mot = i[columnMapping.motivo] || '<b>EM ABERTO</b>';
+                tr.innerHTML = `<td>${i[columnMapping.pedido_jms]||''}</td><td>${i[columnMapping.motorista]||''}</td><td>${i[columnMapping.destinatario]||''}</td><td>${mot}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function addTableSortListeners() {
+            document.querySelectorAll('#metricsTable th[data-sort-key]').forEach(th => {
+                th.addEventListener('click', () => {
+                    const k = th.dataset.sortKey;
+                    if(sortConfig.column === k) sortConfig.direction = sortConfig.direction==='asc'?'desc':'asc';
+                    else { sortConfig.column = k; sortConfig.direction = 'desc'; }
+                    aplicarFiltro();
+                });
+            });
+        }
+        function updateSortIndicators() {
+            document.querySelectorAll('#metricsTable th[data-sort-key]').forEach(th => {
+                th.classList.remove('sort-asc','sort-desc');
+                if(th.dataset.sortKey === sortConfig.column) th.classList.add(`sort-${sortConfig.direction}`);
+            });
+        }
+        
+        function addCityTableSortListeners() {
+            document.querySelectorAll('#cityMetricsTable th[data-sort-key]').forEach(th => {
+                th.addEventListener('click', () => {
+                    const k = th.dataset.sortKey;
+                    if(citySortConfig.column === k) citySortConfig.direction = citySortConfig.direction==='asc'?'desc':'asc';
+                    else { citySortConfig.column = k; citySortConfig.direction = 'desc'; }
+                    aplicarFiltro();
+                });
+            });
+        }
+        function updateCitySortIndicators() {
+            document.querySelectorAll('#cityMetricsTable th[data-sort-key]').forEach(th => {
+                th.classList.remove('sort-asc','sort-desc');
+                if(th.dataset.sortKey === citySortConfig.column) th.classList.add(`sort-${citySortConfig.direction}`);
+            });
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('copyToast');
+            t.textContent = msg; t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+        function limparFiltros() {
+            choicesMotorista.removeActiveItems(); choicesCidade.removeActiveItems();
+            document.getElementById('statusFilter').value = "";
+            document.getElementById('ignoreLowPackagesToggle').checked = false;
+            aplicarFiltro();
+            showToast('Filtros limpos!');
+        }
+
+        async function copyTableToClipboard_AsImage() {
+            const sec = document.getElementById('metricsSection');
+            const tbl = document.getElementById('metricsTable').closest('.table-card');
+            if(!sec || !tbl) return;
+            showToast('Gerando imagem...');
+            
+            const pc = document.createElement('div');
+            pc.style.cssText = "position:absolute;left:-9999px;top:0;padding:20px;background:#f4f7f6;width:1400px";
+            pc.appendChild(sec.cloneNode(true));
+            pc.appendChild(tbl.cloneNode(true));
+            document.body.appendChild(pc);
+
+            try {
+                // html2canvas vai respeitar o data-html2canvas-ignore="true" que colocamos na coluna Ação
+                const cvs = await html2canvas(pc, { scale: 2, useCORS: true, backgroundColor: '#f4f7f6' });
+                cvs.toBlob(blob => navigator.clipboard.write([new ClipboardItem({'image/png': blob})]).then(() => showToast('Imagem Copiada!')));
+            } catch(e) { console.error(e); showToast('Erro ao copiar imagem.'); }
+            finally { document.body.removeChild(pc); }
+        }
+    </script>
+</body>
+</html>
