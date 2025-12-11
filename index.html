@@ -96,6 +96,7 @@
             align-items: center;
             gap: 5px;
             transition: background 0.3s ease;
+            white-space: nowrap;
         }
         .generate-btn:hover { background-color: #01579b; }
 
@@ -162,6 +163,11 @@
         .btn-copy:hover { background-color: #128C7E; }
         .btn-close { background-color: #e0e0e0; color: #333; }
         .btn-close:hover { background-color: #ccc; }
+
+        /* Ordenação */
+        th[data-sort-key] { cursor: pointer; position: relative; padding-right: 20px; }
+        th[data-sort-key].sort-asc::after { content: '▲'; position: absolute; right: 5px; font-size: 0.8em; }
+        th[data-sort-key].sort-desc::after { content: '▼'; position: absolute; right: 5px; font-size: 0.8em; }
 
     </style>
 </head>
@@ -246,6 +252,7 @@
                                     <th data-sort-key="Problematicos">Prob.</th>
                                     <th data-sort-key="EmAberto">Aberto</th>
                                     <th data-sort-key="Taxa">SLA</th>
+                                    <th data-sort-key="UltimaBaixa">Última Baixa</th>
                                     <th data-html2canvas-ignore="true">Ação</th>
                                 </tr>
                             </thead>
@@ -311,8 +318,26 @@
 
     <script>
         // --- CONFIGURAÇÃO ---
-        const PADRAO_1 = { CHAVE_DETECCAO: "3 Segmentos", motorista: "Responsável pela entrega", status: "Marca de assinatura", cidade: "Cidade Destino", motivo: "Motivos dos pacotes problemáticos", pedido_jms: "Número de pedido JMS", destinatario: "Destinatário" };
-        const PADRAO_2 = { CHAVE_DETECCAO: "Centro financeiro de entrega", motorista: "Responsável pela entrega", status: "Marca de assinatura", cidade: "Cidade Destino", motivo: "Motivos dos pacotes problemáticos", pedido_jms: "Número de pedido JMS", destinatario: "Destinatário" };
+        const PADRAO_1 = { 
+            CHAVE_DETECCAO: "3 Segmentos", 
+            motorista: "Responsável pela entrega", 
+            status: "Marca de assinatura", 
+            cidade: "Cidade Destino", 
+            motivo: "Motivos dos pacotes problemáticos", 
+            pedido_jms: "Número de pedido JMS", 
+            destinatario: "Destinatário",
+            horario: "Horário da entrega" 
+        };
+        const PADRAO_2 = { 
+            CHAVE_DETECCAO: "Centro financeiro de entrega", 
+            motorista: "Responsável pela entrega", 
+            status: "Marca de assinatura", 
+            cidade: "Cidade Destino", 
+            motivo: "Motivos dos pacotes problemáticos", 
+            pedido_jms: "Número de pedido JMS", 
+            destinatario: "Destinatário",
+            horario: "Horário da entrega" 
+        };
         const TODOS_PADROES = [PADRAO_1, PADRAO_2];
         const STATUS_ENTREGUE = "Recebimento com assinatura normal";
         const STATUS_PROBLEMA = "Não entregue";
@@ -425,7 +450,7 @@
                         document.getElementById('uploadStatus').textContent = "Arquivo Processado!";
                         document.getElementById('uploadStatus').style.color = "green";
                         addTableSortListeners();
-                        addCityTableSortListeners(); // Adicionar listeners cidade
+                        addCityTableSortListeners(); 
 
                     } catch (error) {
                         console.error(error);
@@ -506,11 +531,20 @@
             data.forEach(i => {
                 const m = i[columnMapping.motorista];
                 if(!m) return;
-                if(!grouped[m]) grouped[m] = { total:0, ent:0, prob:0, ab:0 };
+                
+                // MUDANÇA: A chave agora é 'UltimaBaixa' (maiúsculo) para bater com data-sort-key="UltimaBaixa"
+                if(!grouped[m]) grouped[m] = { total:0, ent:0, prob:0, ab:0, UltimaBaixa: '' };
+                
                 grouped[m].total++;
                 if(i[columnMapping.status] === STATUS_ENTREGUE) grouped[m].ent++;
                 else if(i[columnMapping.motivo]) grouped[m].prob++;
                 else grouped[m].ab++;
+
+                const timeStr = i[columnMapping.horario]; 
+                // Comparação e atribuição usando a chave correta
+                if (timeStr && timeStr > grouped[m].UltimaBaixa) {
+                    grouped[m].UltimaBaixa = timeStr;
+                }
             });
 
             let arr = Object.keys(grouped).map(k => ({
@@ -521,7 +555,15 @@
 
             const { column, direction } = sortConfig;
             const mult = direction === 'asc' ? 1 : -1;
-            arr.sort((a,b) => (typeof a[column]==='string' ? a[column].localeCompare(b[column]) : a[column]-b[column]) * mult);
+            
+            arr.sort((a,b) => {
+                let valA = a[column];
+                let valB = b[column];
+                if (valA === undefined) valA = "";
+                if (valB === undefined) valB = "";
+                
+                return (typeof valA==='string' ? valA.localeCompare(valB) : valA-valB) * mult;
+            });
             
             updateSortIndicators();
 
@@ -532,17 +574,21 @@
 
                 let btnHtml = "";
                 if ((row.ab + row.prob) > 0) {
+                    // MUDANÇA: Texto do botão alterado
                     btnHtml = `<button class="generate-btn" onclick="gerarTextoCobranca('${row.Entregador}')">
-                                <i class="fas fa-file-alt"></i> Gerar Texto
+                                <i class="fas fa-file-alt"></i> Cobrar Motorista
                                </button>`;
                 } else {
                     btnHtml = `<span style="color:green;font-size:0.8rem;">OK <i class="fas fa-check"></i></span>`;
                 }
 
-                // MUDANÇA: A última coluna tem o atributo data-html2canvas-ignore para não sair na foto
+                // Uso da chave correta UltimaBaixa
+                const ultimaBaixaDisplay = row.UltimaBaixa ? row.UltimaBaixa : '-';
+
                 tr.innerHTML = `
                     <td>${nomeHtml}</td><td>${row.total}</td><td>${row.ent}</td><td>${row.prob}</td><td>${row.ab}</td>
                     <td>${row.Taxa.toFixed(2)}%</td>
+                    <td>${ultimaBaixaDisplay}</td>
                     <td data-html2canvas-ignore="true">${btnHtml}</td>
                 `;
                 tbody.appendChild(tr);
